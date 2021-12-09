@@ -1,0 +1,33 @@
+# EventListener for repos of type microservice
+#
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: trigger-microservice-event-listener
+spec:
+  serviceAccountName: tekton-triggers-sa
+  triggers:
+    - name: trigger-microservice
+      interceptors:
+        - github:
+            secretRef:
+              secretName: github-webhook-token
+              secretKey: githubSecret
+            eventTypes:
+        - cel:
+            filter: "! header.match('X-GitHub-Event', 'ping')"
+
+            # The keys are add to body
+            overlays:
+              #- key: webhook_request_url
+              #expression: "requestURL"
+
+              - key: application_name
+                expression: "requestURL.parseURL().query.APP"
+
+              - key: microservice_name
+                expression: "requestURL.parseURL().query.MS_NAME"
+      bindings:
+        - ref: trigger-github-binding
+      template:
+        name: trigger-github-template

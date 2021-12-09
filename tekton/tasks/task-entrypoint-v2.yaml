@@ -1,0 +1,67 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: entrypoint-task
+spec:
+  params:
+    - name: base64Payload
+      description: Payload from Webhook
+      type: string
+
+    - name: filePayload
+      description: File payload
+      type: string
+      default: payload.json
+
+    - name: fileGitHubEvent
+      description: File GitHub event
+      type: string
+      default: gitHubEvent.json
+
+    - name: fileCustomData
+      description: File custom data (data from webhook query string)
+      type: string
+      default: customData.json
+
+  workspaces:
+    - name: github
+
+  steps:
+    - name: write-files
+      image: quay.io/jberchez-redhat/custom-utils:v2.0
+      script: |
+        #! /usr/bin/env bash
+
+        payload=$(echo "$(params.base64Payload)" | base64 -d)
+
+        filePayload="$(workspaces.github.path)/$(params.filePayload)"
+        echo "${payload}" > "${filePayload}"
+
+        fileGitHubEvent="$(workspaces.github.path)/$(params.fileGitHubEvent)"
+        echo "${payload}" | jq '.github_event_got' > "${fileGitHubEvent}"
+
+        fileCustomData="$(workspaces.github.path)/$(params.fileCustomData)"
+        echo "${payload}" | jq '.custom_data' > "${fileCustomData}"
+
+    - name: show-files
+      image: quay.io/jberchez-redhat/custom-utils:v2.0
+      script: |
+        #! /usr/bin/env bash
+
+        set -e
+
+        #ls -ltr "$(workspaces.github.path)"
+
+        if [[ -s "$(workspaces.github.path)/$(params.filePayload)" ]]; then
+           cat "$(workspaces.github.path)/$(params.filePayload)"
+        fi
+
+        if [[ -s "$(workspaces.github.path)/$(params.fileGitHubEvent)" ]]; then
+           cat "$(workspaces.github.path)/$(params.fileGitHubEvent)"
+        fi
+
+        if [[ -s "$(workspaces.github.path)/$(params.fileCustomData)" ]]; then
+           cat "$(workspaces.github.path)/$(params.fileCustomData)"
+        fi
+
+        exit 0

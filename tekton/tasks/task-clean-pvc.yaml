@@ -1,0 +1,36 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+
+metadata:
+  name: task-clean-pvc
+
+spec:
+  steps:
+    - name: clean-pvc
+      image: quay.io/jberchez-redhat/custom-utils:v3.0
+      script: |
+        #! /usr/bin/env bash
+
+        pvcs=($(oc get pvc -l delete=true -o name))
+
+        echo "PVC's found to del: ${#pvcs[@]}"
+
+        if [[ ${#pvcs[@]} -gt 0 ]]; then
+           echo "PVC's to del: ${pvcs[@]}"
+
+           # Run more than once to ensure the deletion
+           for i in {0..1}
+           do
+              for pvc in "${pvcs[@]}"
+              do
+                 if oc get ${pvc} &> /dev/null; then
+                    oc delete ${pvc} &> /dev/null &
+                    oc patch ${pvc} -p '{"metadata":{"finalizers": []}}' --type=merge &> /dev/null
+                 fi
+              done
+           done
+        fi
+
+ Voy, obtener la fecha del pvc y borrar los antiguos
+
+        exit 0

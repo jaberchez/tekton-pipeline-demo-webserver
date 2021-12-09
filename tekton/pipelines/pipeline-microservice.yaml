@@ -1,0 +1,26 @@
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+
+metadata:
+  name: pipeline-microservice
+
+spec:
+  workspaces:
+    - name: github
+
+  params:
+    - name: base64Payload
+      type: string
+
+  tasks:
+    - name: create-payload-data-files-task
+      taskRef:
+        name: create-payload-data-files-task
+
+      workspaces:
+        - name: github
+          workspace: github
+
+      params:
+        - name: base64Payload
+          value: "$(params.base64Payload)"

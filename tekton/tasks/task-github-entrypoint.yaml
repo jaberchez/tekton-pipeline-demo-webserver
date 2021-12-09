@@ -1,0 +1,324 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+
+metadata:
+  name: task-github-entrypoint
+
+spec:
+  params:
+    - name: gitHubEvent
+      description: GitHub event
+      type: string
+
+    - name: gitHubPayload
+      description: GitHub payload from Webhook
+      type: string
+
+    - name: xForwardedHost
+      description: Value from X-Forwarded-Host http header (source host)
+      type: string
+
+    - name: gitHubFilePayload
+      description: GitHub payload file
+      type: string
+      default: github-payload.conf
+
+    - name: filePvc
+      description: PVC file
+      type: string
+      default: pvc.conf
+
+    #- name: gitHubFileWebhookParams
+    #  description: GitHub payload file
+    #  type: string
+    #  default: github-webhook-params.conf
+
+  workspaces:
+    - name: github
+
+  #results:
+  #  - name: pvc-name
+  #    description: The Persistent Volume Claim create in this task
+
+  steps:
+    - name: create-pvc
+      image: quay.io/jberchez-redhat/custom-utils:v3.0
+      script: |
+        #! /usr/bin/env bash
+
+        set -e
+
+        #namePvc=pvc-tekton-$(date +%s)
+        namePvc=pvc-tekton-$(($(date +%s%N)/1000000))
+        caCert="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+        token="$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)"
+
+        #echo "${namePvc}" > $(results.pvc-name.path)
+
+        oc login https://openshift.default.svc --certificate-authority="${caCert}" --token "${token}" &> /dev/null
+        oc project tekton &> /dev/null
+
+        cat << EOF | oc apply -f -
+        apiVersion: v1
+        kind: PersistentVolumeClaim
+        metadata:
+          name: "${namePvc}"
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          volumeMode: Filesystem
+          resources:
+            requests:
+              storage: 5Gi
+          storageClassName: aws-gp2
+        EOF
+
+        # Write the name of the pvc to a file
+        echo "${namePvc}" > "$(workspaces.github.path)/$(params.filePvc)"
+
+        exit 0
+
+    # Create a file with the GitHub payload
+    # Note: This task create a file with a new payload adding the GitHub event and query string 
+    #       parameters from webhook
+    - name: create-github-payload
+      image: quay.io/jberchez-redhat/custom-utils:v3.0
+      script: |
+        #! /usr/bin/env python3
+
+        from urllib.parse import parse_qs
+
+        import urllib.parse as urlparse
+        import requests
+        import json
+        import os
+        import sys
+        import yaml
+        import re
+
+        #token = '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'
+        token              = os.environ.get('GITHUB_TOKEN')
+        headers            = ""
+        file_payload       = "$(workspaces.github.path)/$(params.gitHubFilePayload)"
+        payload_str        = "{}".format('$(params.gitHubPayload)')
+        x_forwarded_host   = "{}".format('$(params.xForwardedHost)')
+        payload            = {}
+        hook               = ""
+        params             = []
+
+        # Data from webhook request url
+        custom_data  = {}
+
+        if token == None:
+           print("[ERROR] Unable to find GitHub token")
+           sys.exit(1)
+
+        if len(payload_str) == 0:
+          print("[ERROR]: GitHub payload empty")
+          sys.exit(1)
+
+        token   = token.replace("\n", "")
+        headers = {"Authorization": "token {}".format(token)}
+
+        payload = json.loads(payload_str)
+
+        if not 'repository' in payload:
+           print("[ERROR] Unable to find 'repository' in payload")
+           sys.exit(1)
+
+        if not 'hooks_url' in payload['repository']:
+           print("[ERROR] Unable to find 'hooks_url' in payload")
+           sys.exit(1)
+
+        hooks_url = "{}".format(payload['repository']['hooks_url'])
+
+        try:
+           r    = requests.get(hooks_url, headers=headers)
+           data = json.loads(r.content.decode("UTF-8"))
+
+           #x_forwarded_host = re.sub(r'', "", x_forwarded_host)
+
+           for h in data:
+              if 'config' in h and 'url' in h['config']:
+                 hook_tmp = h['config']['url']
+                 hook_tmp = re.sub(r'^https?://', "", hook_tmp)
+
+                 if hook_tmp.startswith(x_forwarded_host):
+                    hook = "{}".format(h['config']['url'])
+                    break
+        except Exception as e:
+           print("[ERROR] {}".format(e))
+           sys.exit(1)
+
+        if len(hook) == 0:
+           print("[ERROR] WebHook not found")
+           sys.exit(1)
+
+        # Extract params from webhook
+        parsed = urlparse.urlparse(hook)
+        p      = parsed.query.split('&')
+
+        for i in p:
+           i = i.replace(" ", "")
+           d = i.split("=")
+
+           key = "{}".format(d[0])
+           val = "{}".format(d[1])
+
+           if len(key) == 0:
+             print("[ERROR] Unable to find a key in webhook URL parameters")
+             sys.exit(1)
+           elif len(val) == 0:
+             print("[ERROR] Unable to find a value in key \"{}\" in webhook URL parameters".format(key))
+             sys.exit(1)
+
+           key = key.upper()
+           val = val.lower()
+
+           custom_data[key] = val
+
+        if len(custom_data) == 0:
+           print("[ERROR] Unable to find data in webhook URL parameters")
+           sys.exit(1)
+
+        # Check if "TYPE" key exists
+        # Note: TYPE is the key to know the pipeline to run
+        if not 'TYPE' in custom_data:
+          print("[ERROR] Unable to find key 'TYPE' in Webhook URL")
+          sys.exit(1)
+
+        # Add custom_data to payload
+        payload['custom_data'] = custom_data
+
+        # Add github_event_got key with the github event we got
+        payload['github_event_got'] = "{}".format('$(params.gitHubEvent)')
+
+        # Create the file with the new payload
+        try:
+           f = open(file_payload,"w")
+           #f.write(json.dumps(payload))
+           json.dump(payload, f)
+           f.close()
+        except Exception as e:
+           print("[ERROR] {}".format(e))
+           sys.exit(1)
+
+        print("OK")
+        sys.exit(0)
+
+      env:
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-webhook-token
+              key: githubToken
+
+    - name: run-pipeline
+      image: quay.io/jberchez-redhat/custom-utils:v3.0
+      script: |
+        #! /usr/bin/env python3 
+
+        from datetime import datetime
+
+        import sys
+        import json
+        import subprocess
+        import base64
+
+        #pod_template     = '''
+        #nodeSelector:
+        #  tekton: "true"
+        #'''
+
+        pod_template     = '''
+        securityContext:
+          runAsUser: 1000
+          runAsGroup: 1000
+          fsGroup: 1000
+        '''
+
+        pvc_name         = ""
+        file_payload     = "$(workspaces.github.path)/$(params.gitHubFilePayload)"
+        file_pvc         = "$(workspaces.github.path)/$(params.filePvc)"
+
+        # Name pipeline to run
+        pipeline         = ""
+
+        # GitHub payload
+        payload          = {}
+
+        try:
+           f = open(file_payload, "r")
+           payload = json.load(f)
+           f.close()
+        except Exception as e:
+           print("[ERROR] {}".format(e))
+           sys.exit(1)
+
+        try:
+           f = open(file_pvc, "r")
+           pvc_name = f.read()
+           f.close()
+
+           pvc_name = pvc_name.replace("\n", "")
+        except Exception as e:
+           print("[ERROR] {}".format(e))
+           sys.exit(1)
+
+        try:
+           f = open("/tmp/pod-template.yaml", "w")
+           f.write(pod_template)
+           f.close()
+        except Exception as e:
+           print("[ERROR] {}".format(e))
+           sys.exit(1)
+
+        # Check TYPE to run the right pipeline
+        if payload['custom_data']['TYPE'] == "microservice":
+           pipeline = "pipeline-microservice"
+        else:
+          print("[ERROR] Unknown TYPE: {}".format(payload['custom_data']['TYPE']))
+          sys.exit(1)
+
+        json_str     = json.dumps(payload)
+        encodedBytes = base64.b64encode(json_str.encode("utf-8"))
+        encodedStr   = str(encodedBytes, "utf-8")
+
+        now          = datetime.now()
+        date_time    = now.strftime("%m-%d-%Y_%H-%M-%S")
+
+        # Create command to run
+        cmd  = "tkn pipeline start {} --showlog --use-param-defaults --param base64Payload={}".format(pipeline, encodedStr)
+        cmd += ' --workspace name=github,claimName={}'.format(pvc_name)
+        cmd += ' --labels tekton.dev/pipeline-created-by="github-entrypoint-task"'
+        cmd += ' --labels tekton.dev/pipeline-created-at="{}"'.format(date_time)
+        cmd += ' --pod-template /tmp/pod-template.yaml'
+
+        # Run the pipeline
+        p   = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, shell=True)
+
+        (output, _) = p.communicate()
+        exit_code   = p.wait()
+
+        if exit_code != 0:
+           #print("[ERROR] Problems running pipeline: {}".format(output.decode("UTF-8")))
+           print(output.decode("UTF-8"))
+           sys.exit(1)
+
+        print("OK")
+        sys.exit(0)
+
+    - name: set-pvc-to-clean
+      image: quay.io/jberchez-redhat/custom-utils:v3.0
+      script: |
+        #! /usr/bin/env bash
+
+        set -e
+
+        filePvc="$(workspaces.github.path)/$(params.filePvc)"
+        pvc="$(cat $filePvc)"
+
+        oc label pvc "${pvc}" delete=true &> /dev/null
+
+        echo "OK"
+        exit 0

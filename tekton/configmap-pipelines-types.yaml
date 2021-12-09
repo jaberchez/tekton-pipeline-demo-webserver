@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pipelines-types
+data:
+  pipelines-types.properties: |
+    # Notes:
+    #   type=pipeline
+    #   type come from GitHub WebHook TYPE query string
+    microservice=microservice-pipeline

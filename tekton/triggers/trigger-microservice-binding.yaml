@@ -1,0 +1,16 @@
+# TriggerBinding to get the GitHub event and the body
+
+apiVersion: triggers.tekton.dev/v1alpha1 
+kind: TriggerBinding 
+metadata:
+  name: trigger-microservice-binding
+spec:
+  params: 
+  - name: gitHubEvent
+    value: $(header.X-Github-Event)
+    
+  - name: gitHubPayload
+    value: $(body)
+    
+  - name: appName
+    value: $(body)

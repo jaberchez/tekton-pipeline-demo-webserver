@@ -1,0 +1,33 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: github-entrypoint-task
+spec:
+  params:
+    - name: GITHUB_EVENT
+      description: GitHub event
+      type: string
+
+    - name: GITHUB_BODY
+      description: GitHub body from Webhook
+      type: string
+
+  workspaces:
+    - name: github
+
+  steps:
+    - name: create-github-event-file
+      image: centos:8
+      script: |
+        #!/usr/bin/env bash
+
+         echo "$(params.GITHUB_EVENT)" > $(workspaces.github.path)/github-event.txt
+         cat $(workspaces.github.path)/github-event.txt
+
+    - name: create-body-file
+      image: centos:8
+      script: |
+        #!/usr/bin/env bash
+
+         echo "$(params.GITHUB_BODY)" > $(workspaces.github.path)/github-body.txt
+         cat $(workspaces.github.path)/github-body.txt

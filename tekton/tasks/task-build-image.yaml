@@ -1,0 +1,61 @@
+apiVersion: tekton.dev/v1beta1 
+kind: Task 
+metadata:
+  name: build-image
+spec: 
+  params:
+    - name: contextPath
+      description: The directory where the Dockerfile is
+      type: string
+
+    - name: pathToDockerFile
+      description: The path to Dockerfile
+      type: string
+      default: Dockerfile
+
+    - name: imageUrl
+      description: Image name including repository
+      type: string
+
+    #- name: imageTag
+    #  description: Image tag
+    #  type: string
+    #  default: latest
+
+  workspaces:
+    - name: source
+
+  steps:
+    - name: get-docker-image-tag
+      image: alpine/git
+      command:
+        - sh
+      args:
+        - -c
+        - |
+           cd "$(workspaces.source.path)/$(params.nameDir)"
+          
+          sha=$(git rev-parse --short HEAD)
+          echo "$sha"
+    #- name: create-ssh-key
+    #  image: ubuntu
+    #  script: |
+    #    #!/usr/bin/env bash
+    #    
+    #     echo "${SSH_KEY}" > $(workspaces.sshkey.path)/id_rsa
+    #     chmod 0600 $(workspaces.sshkey.path)/id_rsa
+
+    #  env:
+    #    - name: SSH_KEY
+    #      valueFrom:
+    #        secretKeyRef:
+    #          name: git-rsa-key
+    #          key: id_rsa
+
+    #- name: build-image
+    #  image: gcr.io/kaniko-project/executor
+    #  args:
+    #    -  --dockerfile=$(params.pathToDockerFile)
+    #    -  --context=$(workspaces.source.path)/$(params.nameDir)
+    #    -  --destination=$(params.dockerImage):$(params.tag)
+  

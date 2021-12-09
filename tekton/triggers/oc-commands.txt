@@ -1,0 +1,1 @@
+oc create route edge el-github-event-listener --service el-github-event-listener --port 8080

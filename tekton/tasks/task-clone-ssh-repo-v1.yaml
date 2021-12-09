@@ -1,0 +1,52 @@
+# Task to clone git repo with ssh authentication
+
+apiVersion: tekton.dev/v1beta1 
+kind: Task 
+metadata:
+  name: clone-ssh-repo
+spec: 
+  params:
+    - name: urlRepo
+      description: The git repo URL to clone
+      type: string
+
+    - name: revision
+      description: The revision for git repo (branch, tag)
+      type: string
+      default: master
+
+    - name: nameRepoDir
+      description: The repo directory name
+      type: string
+
+  workspaces:
+    - name: source
+    - name: sshkey
+
+  steps:
+    - name: create-ssh-key
+      image: ubuntu
+      script: |
+        #!/usr/bin/env bash
+        
+         echo "${SSH_KEY}" > $(workspaces.sshkey.path)/id_rsa
+         chmod 0600 $(workspaces.sshkey.path)/id_rsa
+      env:
+        - name: SSH_KEY
+          valueFrom:
+            secretKeyRef:
+              name: git-rsa-key
+              key: id_rsa
+
+    - name: clone-repo
+      image: alpine/git
+      args:
+        - clone 
+        - "$(params.urlRepo)"
+        - -b 
+        - "$(params.revision)"
+        - "$(workspaces.source.path)/$(params.nameRepoDir)"
+  
+      env:
+        - name: GIT_SSH_COMMAND
+          value: "ssh -i $(workspaces.sshkey.path)/id_rsa -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"

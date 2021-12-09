@@ -1,0 +1,43 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+
+metadata:
+  name: task-clean-pvc
+
+spec:
+  steps:
+    - name: clean-pvc
+      image: quay.io/jberchez-redhat/custom-utils:v3.0
+      script: |
+        #! /usr/bin/env bash
+
+        #set -x
+        cont=0
+
+        pvc="$(params.pvcName)"
+        pvcDeleted="false"
+
+        #pvcs=($(oc get pvc ${pvc} -l delete=true | grep -v NAME))
+        pvcs=($(oc get pvc ${pvc} -l delete=true))
+
+        while [[ $cont < 200 ]]
+        do
+           if oc get pvc ${pvc} -  &> /dev/null; then
+              oc delete pvc ${pvc} &> /dev/null &
+              oc patch pvc ${pvc} -p '{"metadata":{"finalizers": []}}' --type=merge
+
+              (( cont++ ))
+              sleep 1
+           else
+              pvcDeleted="true"
+              break
+           fi
+        done
+
+        if [[ ${pvcDeleted} == "false" ]]; then
+           echo "[WARNING] Unable to delete pvc \"${pvc}\""
+        else
+           echo "OK"
+        fi
+
+        exit 0

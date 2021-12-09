@@ -1,0 +1,50 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: create-payload-data-files-task
+spec:
+  params:
+    - name: base64Payload
+      description: Payload from Webhook encoded in base64
+      type: string
+
+    - name: filePayload
+      description: File payload
+      type: string
+      default: payload.json
+
+    - name: fileGitHubEvent
+      description: File GitHub event
+      type: string
+      default: gitHubEvent.json
+
+    - name: fileCustomData
+      description: File custom data (data from webhook query string)
+      type: string
+      default: customData.json
+
+  workspaces:
+    - name: github
+
+  steps:
+    - name: create-payload-data-files
+      image: quay.io/jberchez-redhat/custom-utils:v2.0
+      script: |
+        #! /usr/bin/env bash
+        
+        set -e
+
+        dir="$(workspaces.github.path)"
+
+        payload="$(echo "$(params.base64Payload)" | base64 -d)"
+
+        filePayload="${dir}/$(params.filePayload)"
+        echo "${payload}" > "${filePayload}"
+
+        fileGitHubEvent="${dir}/$(params.fileGitHubEvent)"
+        echo "${payload}" | jq '.github_event_got' > "${fileGitHubEvent}"
+
+        fileCustomData="${dir}/$(params.fileCustomData)"
+        echo "${payload}" | jq '.custom_data' > "${fileCustomData}"
+
+        exit 0

@@ -1,0 +1,49 @@
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+
+metadata:
+ name: trigger-microservice-template
+ annotations:
+   triggers.tekton.dev/old-escape-quotes: "true" # Very important annotation
+
+spec:
+ params:
+   - name: gitHubEvent
+   #- name: gitHubPayload
+   - name: appName
+   - name: microserviceName
+   - name: branch
+   - name: repo
+
+ resourcetemplates:
+   - apiVersion: tekton.dev/v1beta1
+     kind: PipelineRun
+
+     metadata:
+       generateName: pipeline-microservice-run-
+     spec:
+       pipelineRef:
+         name: pipeline-microservice
+
+       params:
+         - name: gitHubEvent
+           value: '$(tt.params.gitHubEvent)' # Very important single quote
+
+         #- name: gitHubPayload
+         #  value: '$(tt.params.gitHubPayload)'
+
+         - name: appName
+           value: '$(tt.params.appName)'
+
+         - name: microserviceName
+           value: '$(tt.params.microserviceName)'
+
+         - name: branch
+           value: '$(tt.params.branch)'
+
+         - name: repo
+           value: '$(tt.params.repo)'
+
+       workspaces:
+         - name: github # This workspace name must be declared in the Task
+           emptyDir: {}

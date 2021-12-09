@@ -1,0 +1,120 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: github-entrypoint-task
+spec:
+  params:
+    - name: GITHUB_EVENT
+      description: GitHub event
+      type: string
+
+    - name: GITHUB_PAYLOAD
+      description: GitHub payload from Webhook
+      type: string
+
+    - name: GITHUB_FILE_PAYLOAD
+      description: GitHub payload file
+      type: string
+      default: github-payload.conf
+
+  workspaces:
+    - name: github
+
+  steps:
+    - name: create-github-payload-file
+      #image: python:3.8.8-alpine
+      image: quay.io/jberchez-redhat/custom-utils:v1.0
+      script: |
+        #! /usr/bin/env python3 
+
+        import sys
+        import json
+
+        payload_str = "{}".format('$(params.GITHUB_PAYLOAD)')
+
+        if len(payload_str) == 0:
+          print("[ERROR]: GitHub payload empty")
+          sys.exit(1)
+
+        try:
+           payload = json.loads(payload_str)
+
+           if not 'github_webhook_request_url' in payload:
+             print("[ERROR] Unable to find key github_webhook_request_url in payload")
+             sys.exit(1)
+
+           # Add github_event_got key with the github event we got
+           payload['github_event_got'] = "{}".format('$(params.GITHUB_EVENT)')
+
+           # Create the payload file
+           f = open('$(GITHUB_FILE_PAYLOAD)', "w")
+           f.write(json.dumps(payload))
+           f.close()
+        except Exception as e:
+           print("[ERROR] {}".format(e))
+           sys.exit(1)
+
+        sys.exit(0)
+
+    - name: run-pipeline
+      image: quay.io/jberchez-redhat/custom-utils:v1.0
+      script: |
+        #! /usr/bin/env python3 
+
+        import urllib.parse as urlparse
+        import sys
+        import json
+
+        payload    = {}
+
+        # Data from webhook request url
+        extra_data = {}
+
+        try:
+           f = open('$(GITHUB_FILE_PAYLOAD)', "r")
+           payload = json.load(f)
+           f.close()
+        except Exception as e:
+           print("[ERROR] {}".format(e))
+           sys.exit(1)
+
+
+        # Parse query url from webhook
+        if not 'github_webhook_request_url'
+Voy
+        payload="$(cat '$($(params.GITHUB_FILE_PAYLOAD)')"
+        fileWebHookParams=$(workspaces.github.path)/$(params.GITHUB_FILE_WEBHOOK_PARAMS)
+        fileTypesProperties="/var/configmap/pipelines-types.properties"
+
+        # Get type
+        if [ ! -s ${fileWebHookParams} ]; then
+           echo "[ERROR] File ${fileWebHookParams} not found or empty"
+           exit 1
+        fi
+
+        if ! grep -Eiq "type[[:space:]]*=.+" ${fileWebHookParams}; then
+           echo "[ERROR] type parameter not found in ${fileWebHookParams}"
+           exit 1
+        fi
+
+        type="$(grep -Ei "type[[:space:]]*=.+" ${fileWebHookParams} | sed -r 's#[[:space:]]+##g' | cut -d'=' -f2)"
+
+        if [ -z "${type}" ]; then
+           echo "[ERROR] Unable to find type in WebHook params"
+           exit 1
+        fi
+
+        if ! grep -Eiq "${type}[[:space:]]*=.+" ${fileTypesProperties}; then
+           echo "[ERROR] type \"${type}\" not found in ${fileTypesProperties}"
+           exit 1
+        fi
+
+        pipeline="$(grep -Ei "${type}[[:space:]]*=.+" ${fileTypesProperties} | sed -r 's#[[:space:]]+##g' | cut -d'=' -f2)"
+
+        Voy, listar los pipelines para ver si existe y ejecutarlo
+
+        exit 0
+
+      volumeMounts:
+        - name: "pipelines-types"
+          mountPath: /var/configmap

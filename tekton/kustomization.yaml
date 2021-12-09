@@ -1,0 +1,10 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  #- service-account.yaml
+  - secret-github-rsa-key.yaml
+  - secret-github.yaml
+  #- triggers/rbac.yaml
+  #- tasks/gateway.yaml
+  #- tasks/clone-ssh-repo.yaml

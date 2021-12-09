@@ -1,0 +1,16 @@
+apiVersion: tekton.dev/v1beta1
+kind: TaskRun
+metadata:
+  name: gateway-task-run
+spec:
+  taskRef:
+    name: gateway-task
+  params:
+    - name: GITHUB_EVENT
+      value: push
+    - name: GITHUB_BODY
+      value: "{example: value}"
+  workspaces:
+    - name: github # this workspace name must be declared in the Task
+      emptyDir: {}
+      subPath: github
